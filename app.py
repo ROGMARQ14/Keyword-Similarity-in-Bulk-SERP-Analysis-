@@ -33,7 +33,20 @@ def make_api_request(api_login, api_password, keyword, location_code=2840):
             auth=(api_login, api_password),
             json=[post_data]
         )
-        return response.json()
+        response_json = response.json()
+        
+        # Debug information
+        if response.status_code != 200:
+            st.error(f"API Error: Status code {response.status_code}")
+            st.error(f"Response: {response_json}")
+            return None
+            
+        if "status_code" in response_json and response_json["status_code"] != 20000:
+            st.error(f"API Error: {response_json.get('status_message', 'Unknown error')}")
+            st.error(f"Full response: {response_json}")
+            return None
+            
+        return response_json
     except Exception as e:
         st.error(f"Error making API request: {str(e)}")
         return None
@@ -42,19 +55,54 @@ def make_api_request(api_login, api_password, keyword, location_code=2840):
 def get_serp_domains(results):
     domains = []
     try:
-        if results and isinstance(results, dict):
-            tasks = results.get('tasks', [])
-            if tasks and len(tasks) > 0:
-                result = tasks[0].get('result', [])
-                if result and len(result) > 0:
-                    items = result[0].get('items', [])
-                    for item in items:
-                        if 'url' in item:
-                            ext = tldextract.extract(item['url'])
-                            domain = f"{ext.domain}.{ext.suffix}"
-                            domains.append(domain)
+        if not results:
+            st.warning("No results received from API")
+            return domains
+            
+        if not isinstance(results, dict):
+            st.warning(f"Unexpected results format: {type(results)}")
+            return domains
+            
+        tasks = results.get('tasks', [])
+        if not tasks:
+            st.warning("No tasks found in API response")
+            st.write("API Response:", results)
+            return domains
+            
+        if len(tasks) == 0:
+            st.warning("Empty tasks list in API response")
+            return domains
+            
+        result = tasks[0].get('result', [])
+        if not result:
+            st.warning("No result found in task")
+            st.write("Task data:", tasks[0])
+            return domains
+            
+        if len(result) == 0:
+            st.warning("Empty result list in task")
+            return domains
+            
+        items = result[0].get('items', [])
+        if not items:
+            st.warning("No items found in result")
+            st.write("Result data:", result[0])
+            return domains
+            
+        for item in items:
+            if 'url' in item:
+                ext = tldextract.extract(item['url'])
+                domain = f"{ext.domain}.{ext.suffix}"
+                domains.append(domain)
+            else:
+                st.warning(f"No URL found in item: {item}")
+                
+        if not domains:
+            st.warning("No domains were extracted from the results")
+            
     except Exception as e:
         st.error(f"Error processing SERP results: {str(e)}")
+        st.write("Results that caused error:", results)
     return domains
 
 @st.cache_data(ttl=3600)
@@ -182,6 +230,9 @@ def main():
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
+                # Add debug section
+                debug_expander = st.expander("Debug Information")
+                
                 serp_comp = {}
                 batches = [keywords[i:i + batch_size] for i in range(0, len(keywords), batch_size)]
                 
@@ -195,18 +246,37 @@ def main():
                         ]
                         
                         for keyword, future in zip(batch, futures):
+                            with debug_expander:
+                                st.write(f"Processing keyword: {keyword}")
+                                
                             results = future.result()
                             if results:
                                 domains = get_serp_domains(results)
-                                if domains:  # Only store if we got domains
+                                if domains:
+                                    with debug_expander:
+                                        st.write(f"Found domains for {keyword}:", domains)
                                     serp_comp[keyword] = domains
+                                else:
+                                    with debug_expander:
+                                        st.write(f"No domains found for keyword: {keyword}")
+                            else:
+                                with debug_expander:
+                                    st.write(f"No results returned for keyword: {keyword}")
                     
                     progress = (batch_idx + 1) / len(batches)
                     progress_bar.progress(progress)
                     time.sleep(0.2)
                 
+                with debug_expander:
+                    st.write("Final serp_comp dictionary:", serp_comp)
+                
                 if len(serp_comp) < 2:
-                    st.error("Not enough valid results to calculate similarities. Please check your API credentials and try again.")
+                    st.error("""
+                    Not enough valid results to calculate similarities. Please check:
+                    1. Your API credentials are correct
+                    2. You have sufficient API credits
+                    3. The API is responding correctly (check Debug Information below)
+                    """)
                     return
                 
                 status_text.text("Calculating similarity matrix...")
