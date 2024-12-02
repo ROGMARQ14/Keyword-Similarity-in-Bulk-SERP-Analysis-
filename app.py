@@ -11,15 +11,12 @@ import base64
 from datetime import datetime
 import time
 import concurrent.futures
-import asyncio
-import aiohttp
 from functools import partial
 import numpy as np
 
 st.set_page_config(page_title="SERP Similarity Analysis", layout="wide")
 
-# Cache the API response to avoid redundant calls
-@st.cache_data(ttl=3600)  # Cache for 1 hour
+@st.cache_data(ttl=3600)
 def make_api_request(api_login, api_password, keyword, location_code=2840):
     post_data = {
         "language_code": "en",
@@ -41,7 +38,6 @@ def make_api_request(api_login, api_password, keyword, location_code=2840):
         st.error(f"Error making API request: {str(e)}")
         return None
 
-# Optimize domain extraction with caching
 @st.cache_data(ttl=3600)
 def get_serp_domains(results):
     domains = []
@@ -52,76 +48,67 @@ def get_serp_domains(results):
                 result = tasks[0].get('result', [])
                 if result and len(result) > 0:
                     items = result[0].get('items', [])
-                    # Use set for faster lookups
-                    seen_domains = set()
                     for item in items:
                         if 'url' in item:
                             ext = tldextract.extract(item['url'])
                             domain = f"{ext.domain}.{ext.suffix}"
-                            if domain not in seen_domains:
-                                domains.append(domain)
-                                seen_domains.add(domain)
+                            domains.append(domain)
     except Exception as e:
         st.error(f"Error processing SERP results: {str(e)}")
     return domains
 
-# Optimize similarity calculation
 @st.cache_data(ttl=3600)
 def calculate_similarity(serp_comp):
     keyword_diffs = {}
-    # Pre-compute strings for comparison
-    domain_strings = {
-        kw: ' '.join(sorted(set(domains))) # Remove duplicates and sort for consistency
-        for kw, domains in serp_comp.items()
-    }
     
-    # Use list comprehension for faster processing
-    combinations = list(itertools.combinations(serp_comp.items(), 2))
-    
-    # Process in chunks for better performance
-    def process_chunk(chunk):
-        chunk_results = {}
-        for (kw1, _), (kw2, _) in chunk:
-            sm = difflib.SequenceMatcher(None, domain_strings[kw1], domain_strings[kw2])
-            chunk_results[(kw1, kw2)] = round(sm.ratio() * 100, 2)
-        return chunk_results
-    
-    # Split into chunks and process
-    chunk_size = 100
-    chunks = [combinations[i:i + chunk_size] for i in range(0, len(combinations), chunk_size)]
-    
-    with concurrent.futures.ThreadPoolExecutor() as executor:
-        chunk_results = list(executor.map(process_chunk, chunks))
-    
-    # Combine results
-    for result in chunk_results:
-        keyword_diffs.update(result)
+    # Process keyword pairs
+    for (kw1, domains1), (kw2, domains2) in itertools.combinations(serp_comp.items(), 2):
+        # Convert domains to sets for comparison
+        set1 = set(domains1)
+        set2 = set(domains2)
+        
+        if not set1 or not set2:  # Skip if either domain list is empty
+            continue
+            
+        # Calculate Jaccard similarity
+        intersection = len(set1.intersection(set2))
+        union = len(set1.union(set2))
+        
+        if union > 0:
+            similarity = (intersection / union) * 100
+        else:
+            similarity = 0
+            
+        keyword_diffs[(kw1, kw2)] = round(similarity, 2)
     
     return keyword_diffs
 
-@st.cache_data(ttl=3600)
 def create_similarity_matrix(similarity_dict, keywords):
-    similarity_df = pd.DataFrame(index=keywords, columns=keywords)
+    similarity_df = pd.DataFrame(index=keywords, columns=keywords, dtype=float)
+    similarity_df.fill(0.0)  # Initialize with zeros
     
-    # Vectorized operations for better performance
-    for (kw1, kw2), ratio in similarity_dict.items():
-        similarity_df.at[kw1, kw2] = ratio
-        similarity_df.at[kw2, kw1] = ratio
+    # Fill the matrix with similarity scores
+    for (kw1, kw2), score in similarity_dict.items():
+        similarity_df.at[kw1, kw2] = score
+        similarity_df.at[kw2, kw1] = score  # Mirror the score
     
-    # Set diagonal to 100% efficiently
+    # Set diagonal to 100%
     np.fill_diagonal(similarity_df.values, 100.0)
     
-    return similarity_df.fillna(0)
+    return similarity_df
 
-@st.cache_data(ttl=3600)
 def plot_heatmap(similarity_df):
-    plt.figure(figsize=(12, 10))
-    sns.heatmap(similarity_df.astype(float), annot=True, fmt=".2f", cmap="YlGnBu")
+    fig, ax = plt.subplots(figsize=(12, 10))
+    sns.heatmap(similarity_df.astype(float), 
+                annot=True, 
+                fmt=".2f", 
+                cmap="YlGnBu",
+                ax=ax)
     plt.title("Keyword SERP Similarity Matrix")
     plt.xticks(rotation=45, ha='right')
     plt.yticks(rotation=0)
     plt.tight_layout()
-    return plt
+    return fig
 
 def main():
     st.title("SERP Similarity Analysis")
@@ -131,7 +118,6 @@ def main():
     Upload a CSV file with your keywords and enter your API credentials to begin.
     """)
     
-    # API Credentials input
     with st.sidebar:
         st.header("API Credentials")
         api_login = st.text_input("DataforSEO API Login", type="password")
@@ -139,15 +125,12 @@ def main():
         
         st.header("Settings")
         location_code = st.number_input("Location Code (default: 2840 for US)", value=2840)
-        
-        # Add batch size control
         batch_size = st.slider("Batch Size (keywords per request)", 
                              min_value=1, 
                              max_value=10, 
                              value=5,
                              help="Higher values are faster but may hit API limits")
     
-    # File upload with better error handling and feedback
     st.subheader("Upload Keywords")
     uploaded_file = st.file_uploader(
         "Upload your keywords CSV file", 
@@ -164,23 +147,21 @@ def main():
             st.write("File uploaded successfully:")
             st.json(file_details)
             
-            # Read CSV efficiently
             try:
-                df = pd.read_csv(uploaded_file, encoding='utf-8', usecols=lambda x: x.lower().strip() in ['keyword', 'keywords'])
+                df = pd.read_csv(uploaded_file)
             except UnicodeDecodeError:
-                df = pd.read_csv(uploaded_file, encoding='latin1', usecols=lambda x: x.lower().strip() in ['keyword', 'keywords'])
+                df = pd.read_csv(uploaded_file, encoding='latin1')
             
-            keyword_columns = df.columns.tolist()
+            # Find keyword column
+            keyword_columns = [col for col in df.columns if col.lower().strip() in ['keyword', 'keywords']]
             
             if not keyword_columns:
-                st.error("""
-                No 'keyword' column found in the CSV file.
-                Please make sure your CSV has one of these column names: 'Keyword', 'Keywords', 'keyword', or 'keywords'
-                """)
+                st.error("No 'keyword' or 'keywords' column found in the CSV file.")
+                st.write("Available columns:", df.columns.tolist())
                 return
             
             keyword_column = keyword_columns[0]
-            keywords = df[keyword_column].dropna().unique().tolist()  # Use unique to remove duplicates
+            keywords = df[keyword_column].dropna().unique().tolist()
             
             st.subheader("Preview of Keywords")
             st.write(f"Found {len(keywords)} unique keywords in column '{keyword_column}'")
@@ -190,14 +171,12 @@ def main():
                 progress_bar = st.progress(0)
                 status_text = st.empty()
                 
-                # Process keywords in batches
                 serp_comp = {}
                 batches = [keywords[i:i + batch_size] for i in range(0, len(keywords), batch_size)]
                 
                 for batch_idx, batch in enumerate(batches):
                     status_text.text(f"Processing batch {batch_idx + 1}/{len(batches)}")
                     
-                    # Process batch in parallel
                     with concurrent.futures.ThreadPoolExecutor(max_workers=batch_size) as executor:
                         futures = [
                             executor.submit(make_api_request, api_login, api_password, keyword, location_code)
@@ -208,11 +187,16 @@ def main():
                             results = future.result()
                             if results:
                                 domains = get_serp_domains(results)
-                                serp_comp[keyword] = domains
+                                if domains:  # Only store if we got domains
+                                    serp_comp[keyword] = domains
                     
                     progress = (batch_idx + 1) / len(batches)
                     progress_bar.progress(progress)
-                    time.sleep(0.2)  # Reduced delay between batches
+                    time.sleep(0.2)
+                
+                if len(serp_comp) < 2:
+                    st.error("Not enough valid results to calculate similarities. Please check your API credentials and try again.")
+                    return
                 
                 status_text.text("Calculating similarity matrix...")
                 similarity_dict = calculate_similarity(serp_comp)
