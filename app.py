@@ -132,8 +132,8 @@ def calculate_similarity(serp_comp):
     return keyword_diffs
 
 def create_similarity_matrix(similarity_dict, keywords):
-    similarity_df = pd.DataFrame(index=keywords, columns=keywords, dtype=float)
-    similarity_df.fill(0.0)  # Initialize with zeros
+    # Initialize DataFrame with zeros
+    similarity_df = pd.DataFrame(0.0, index=keywords, columns=keywords, dtype=float)
     
     # Fill the matrix with similarity scores
     for (kw1, kw2), score in similarity_dict.items():
