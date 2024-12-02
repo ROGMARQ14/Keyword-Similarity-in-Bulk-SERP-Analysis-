@@ -100,22 +100,48 @@ def main():
         st.header("Settings")
         location_code = st.number_input("Location Code (default: 2840 for US)", value=2840)
     
-    # File upload
-    uploaded_file = st.file_uploader("Upload your keywords CSV file", type=['csv'])
+    # File upload with better error handling and feedback
+    st.subheader("Upload Keywords")
+    uploaded_file = st.file_uploader(
+        "Upload your keywords CSV file", 
+        type=['csv'],
+        help="Make sure your CSV file has a column named 'Keyword', 'Keywords', 'keyword', or 'keywords'"
+    )
     
-    if uploaded_file and api_login and api_password:
+    if uploaded_file is not None:
         try:
-            df = pd.read_csv(uploaded_file)
+            # Display file details
+            file_details = {
+                "Filename": uploaded_file.name,
+                "File size": f"{uploaded_file.size} bytes"
+            }
+            st.write("File uploaded successfully:")
+            st.json(file_details)
             
-            # Find the keyword column
+            # Read CSV with explicit encoding
+            try:
+                df = pd.read_csv(uploaded_file, encoding='utf-8')
+            except UnicodeDecodeError:
+                df = pd.read_csv(uploaded_file, encoding='latin1')
+            
+            # Find the keyword column with more detailed feedback
             keyword_columns = [col for col in df.columns if col.lower().strip() in ['keyword', 'keywords']]
             
             if not keyword_columns:
-                st.error("No 'keyword' or 'keywords' column found in the CSV file.")
+                st.error("""
+                No 'keyword' column found in the CSV file.
+                Available columns: {}
+                Please make sure your CSV has one of these column names: 'Keyword', 'Keywords', 'keyword', or 'keywords'
+                """.format(', '.join(df.columns)))
                 return
-                
+            
             keyword_column = keyword_columns[0]
             keywords = df[keyword_column].dropna().tolist()
+            
+            # Display preview of keywords
+            st.subheader("Preview of Keywords")
+            st.write(f"Found {len(keywords)} keywords in column '{keyword_column}'")
+            st.write("First 5 keywords:", keywords[:5])
             
             if st.button("Start Analysis"):
                 progress_bar = st.progress(0)
