@@ -125,11 +125,22 @@ def main():
         
         st.header("Settings")
         location_code = st.number_input("Location Code (default: 2840 for US)", value=2840)
-        batch_size = st.slider("Batch Size (keywords per request)", 
-                             min_value=1, 
-                             max_value=10, 
-                             value=5,
-                             help="Higher values are faster but may hit API limits")
+        batch_size = st.slider(
+            "Parallel Processing Batch Size", 
+            min_value=1, 
+            max_value=10, 
+            value=5,
+            help="Number of keywords to process simultaneously. Higher values = faster processing but may hit API rate limits. This does NOT affect the number of SERP results per keyword."
+        )
+        
+        st.markdown("""
+        ℹ️ **About Batch Size:**
+        - This controls how many keywords are processed in parallel
+        - Example: With batch size 5 and 100 keywords, the app will process 5 keywords simultaneously
+        - Higher values = faster processing but more API load
+        - Lower values = slower but more reliable
+        - Does NOT affect the number of SERP results per keyword
+        """)
     
     st.subheader("Upload Keywords")
     uploaded_file = st.file_uploader(
