@@ -158,6 +158,23 @@ def plot_heatmap(similarity_df):
     plt.tight_layout()
     return fig
 
+def get_similar_keyword_pairs(similarity_df, threshold):
+    """Extract keyword pairs that have similarity above the threshold."""
+    similar_pairs = []
+    # Get upper triangle of matrix to avoid duplicates
+    for i in range(len(similarity_df.index)):
+        for j in range(i + 1, len(similarity_df.columns)):
+            similarity = similarity_df.iloc[i, j]
+            if similarity >= threshold:
+                keyword1 = similarity_df.index[i]
+                keyword2 = similarity_df.columns[j]
+                similar_pairs.append({
+                    'Keyword 1': keyword1,
+                    'Keyword 2': keyword2,
+                    'Similarity Score': similarity
+                })
+    return pd.DataFrame(similar_pairs)
+
 def main():
     st.title("SERP Similarity Analysis")
     
@@ -188,6 +205,23 @@ def main():
         - Higher values = faster processing but more API load
         - Lower values = slower but more reliable
         - Does NOT affect the number of SERP results per keyword
+        """)
+        
+        st.header("Similarity Analysis")
+        similarity_threshold = st.slider(
+            "Similarity Threshold (%)", 
+            min_value=0, 
+            max_value=100, 
+            value=65,
+            help="Export keyword pairs with similarity score above this threshold"
+        )
+        
+        st.markdown("""
+        ℹ️ **About Similarity Threshold:**
+        - Higher threshold = stricter similarity requirement
+        - Lower threshold = more keyword pairs included
+        - 65% is a good starting point for finding related keywords
+        - Adjust based on your specific needs
         """)
     
     st.subheader("Upload Keywords")
@@ -290,13 +324,37 @@ def main():
                 fig = plot_heatmap(similarity_df)
                 st.pyplot(fig)
                 
-                csv = similarity_df.to_csv()
-                st.download_button(
-                    label="Download Similarity Matrix (CSV)",
-                    data=csv,
-                    file_name=f"similarity_matrix_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                    mime="text/csv"
-                )
+                # Get similar keyword pairs based on threshold
+                similar_pairs_df = get_similar_keyword_pairs(similarity_df, similarity_threshold)
+                
+                st.subheader(f"Similar Keyword Pairs (Similarity ≥ {similarity_threshold}%)")
+                if not similar_pairs_df.empty:
+                    st.dataframe(similar_pairs_df)
+                    
+                    # Download buttons
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # Full similarity matrix download
+                        csv_full = similarity_df.to_csv()
+                        st.download_button(
+                            label="Download Full Similarity Matrix (CSV)",
+                            data=csv_full,
+                            file_name=f"similarity_matrix_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+                    
+                    with col2:
+                        # Similar pairs download
+                        csv_pairs = similar_pairs_df.to_csv(index=False)
+                        st.download_button(
+                            label=f"Download Similar Pairs ≥{similarity_threshold}% (CSV)",
+                            data=csv_pairs,
+                            file_name=f"similar_pairs_{similarity_threshold}pct_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+                else:
+                    st.info(f"No keyword pairs found with similarity ≥ {similarity_threshold}%")
                 
                 status_text.text("Analysis complete!")
                 
