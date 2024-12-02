@@ -10,6 +10,18 @@ This Streamlit application analyzes the similarity between keyword SERPs (Search
 - Download results as CSV
 - Interactive visualization of results
 - Support for different location codes
+- Parallel processing for faster analysis
+- Configurable batch processing
+- Caching for improved performance
+
+## Performance Optimizations
+
+- **Parallel Processing**: Processes multiple keywords simultaneously
+- **Batch Processing**: Configurable batch size for optimal performance
+- **Caching**: Results are cached for 1 hour to avoid redundant API calls
+- **Memory Optimization**: Efficient data structures and vectorized operations
+- **Duplicate Handling**: Automatic removal of duplicate keywords
+- **Smart Rate Limiting**: Configurable batch size to balance speed and API limits
 
 ## Prerequisites
 
@@ -33,10 +45,13 @@ streamlit run app.py
 ```
 
 2. Enter your DataforSEO API credentials in the sidebar
-3. Upload a CSV file containing your keywords (column should be labeled "Keyword", "Keywords", "keyword", or "keywords")
-4. Click "Start Analysis" to begin processing
-5. View the results in the similarity matrix and heatmap
-6. Download the results as CSV if needed
+3. Configure batch size (1-10 keywords per batch)
+   - Higher values = faster processing but may hit API limits
+   - Lower values = more reliable but slower processing
+4. Upload a CSV file containing your keywords
+5. Click "Start Analysis" to begin processing
+6. View the results in the similarity matrix and heatmap
+7. Download the results as CSV if needed
 
 ## CSV File Format
 
@@ -62,12 +77,22 @@ The default location code is 2840 (United States). You can change this in the si
 - 2036: Canada
 - 2036: Australia
 
-## Output
+## Performance Tips
 
-The app generates:
-1. A similarity matrix showing the percentage similarity between each keyword pair
-2. A heatmap visualization of the similarity matrix
-3. Downloadable CSV file with the results
+1. **Batch Size Selection**:
+   - Start with a batch size of 5
+   - Increase if processing is too slow and you're not hitting API limits
+   - Decrease if you're getting API rate limit errors
+
+2. **Optimal Dataset Size**:
+   - The app performs best with up to 100 keywords
+   - Larger datasets may require longer processing times
+   - Consider splitting very large datasets into smaller chunks
+
+3. **Cache Usage**:
+   - Results are cached for 1 hour
+   - Rerunning the same analysis within this period will be much faster
+   - Clear your browser cache if you need fresh results
 
 ## Error Handling
 
@@ -76,6 +101,20 @@ The app includes comprehensive error handling for:
 - Incorrect CSV format
 - API rate limiting
 - Network issues
+- Memory constraints
+
+## Troubleshooting
+
+1. **API Rate Limits**:
+   - Reduce batch size
+   - Add delays between batches
+   - Contact DataforSEO for rate limit increases
+
+2. **Performance Issues**:
+   - Check your internet connection
+   - Reduce the number of keywords
+   - Clear browser cache
+   - Restart the application
 
 ## Support
 
